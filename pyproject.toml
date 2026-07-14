@@ -1,0 +1,22 @@
+[project]
+name = "wine-data-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.139.0",
+    "google-genai>=2.11.0",
+    "google-generativeai>=0.8.6",
+    "langchain>=1.3.13",
+    "langchain-chroma>=1.1.0",
+    "langchain-core>=1.4.9",
+    "langchain-google-genai>=4.2.7",
+    "langchain-text-splitters>=1.1.2",
+    "langgraph>=1.2.9",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.3",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "uvicorn>=0.51.0",
+]
