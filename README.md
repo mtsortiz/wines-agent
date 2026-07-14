@@ -1,127 +1,208 @@
 # Wine Data Agent
 
-Wine Data Agent es una aplicación de consulta sobre vinos construida con FastAPI y un agente conversacional basado en LangChain y Gemini. El proyecto permite interactuar con una base de datos SQLite local y con un almacén vectorial Chroma para responder preguntas sobre vinos a partir de sus atributos técnicos.
+Wine Data Agent is a FastAPI application that exposes a conversational agent to query wines from a local SQLite database.
 
-La idea central es simple: cargas un subconjunto del dataset de vinos, el sistema lo procesa y luego el agente puede buscar por `id`, `designation` o por criterios como país, puntos, precio, provincia, región y nombre del catador.
+The agent uses LangChain + Gemini, keeps conversation context by `thread_id`, and decides which tool to execute based on user intent (`id`, `designation`, or technical filters).
 
-## Funcionalidades
+## What This Project Does
 
-- API REST con FastAPI para conversar con el agente.
-- Agente con memoria de conversación por `thread_id`.
-- Consultas sobre una base SQLite local con datos de vinos.
-- Búsqueda por filtros técnicos mediante herramientas del agente.
-- Persistencia de embeddings en Chroma para futuras extensiones de búsqueda semántica.
+- Runs a REST API with FastAPI.
+- Runs an agent powered by Gemini.
+- Queries wine technical data from SQLite (`wines_table.db`, `wines` table).
+- Generates and persists embeddings in Chroma (`data/processed/chroma_db`).
+- Keeps per-thread conversation memory during runtime.
 
-## Estructura del proyecto
+## Stack and Architecture
 
-- `src/main.py`: punto de entrada de la API.
-- `src/api/routers/router.py`: endpoint de conversación.
-- `src/api/schemas/schemas.py`: esquemas de request y response.
-- `src/agent/agent.py`: configuración del agente y del modelo.
-- `src/agent/tools.py`: herramientas para consultar la base de datos.
-- `scripts/ingests.py`: carga inicial del dataset en SQLite y Chroma.
-- `data/raw/`: dataset fuente en CSV.
-- `data/processed/`: base SQLite generada y vector store Chroma.
+- Backend: FastAPI + Uvicorn
+- Agent: LangChain / LangGraph + custom tools
+- Model: Google Gemini (`ChatGoogleGenerativeAI`)
+- Database: local SQLite
+- Vector store: disk-persistent Chroma
+- Containers: Docker + Docker Compose
 
-## Requisitos
+General flow:
 
-- Python 3.11 o superior.
-- Una clave de API de Google Gemini en la variable de entorno `GOOGLE_API_KEY`.
+1. The CSV is ingested into SQLite and Chroma.
+2. A client calls `POST /api/conversation`.
+3. The agent interprets intent and calls SQL tools when needed.
+4. The API returns an answer, `thread_id`, and the sources used.
 
-## Instalación
+## Requirements
 
-1. Crear y activar el entorno virtual.
-2. Instalar dependencias.
+- Python 3.11+
+- Docker (optional, for containerized execution)
+- Docker Compose v2 (optional)
+- `GOOGLE_API_KEY` environment variable
+
+## Environment Setup
+
+Create a `.env` file in the repository root:
+
+```env
+GOOGLE_API_KEY=your_api_key
+```
+
+Alternative: set it as a session environment variable.
+
+PowerShell:
+
+```powershell
+$env:GOOGLE_API_KEY="your_api_key"
+```
+
+Bash:
+
+```bash
+export GOOGLE_API_KEY="your_api_key"
+```
+
+## Run From Scratch (Local, Without Docker)
+
+### 1) Create a Virtual Environment
+
+Windows (Git Bash):
 
 ```bash
 python -m venv .venv
 source .venv/Scripts/activate
+```
+
+Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+### 2) Install Dependencies
+
+Using `pip`:
+
+```bash
 pip install -U pip
 pip install -e .
 ```
 
-## Configuración
-
-Define la variable de entorno `GOOGLE_API_KEY` antes de ejecutar el proyecto.
-
-En Windows PowerShell:
-
-```powershell
-$env:GOOGLE_API_KEY="tu_clave_aqui"
-```
-
-En bash:
+Optional with `uv`:
 
 ```bash
-export GOOGLE_API_KEY="tu_clave_aqui"
+pip install uv
+uv sync
 ```
 
-## Carga de datos
+### 3) Ingest Initial Data
 
-El script de ingestión toma el archivo CSV ubicado en `data/raw/winemag-data-130k-v2-selected-columns.csv`, crea la base SQLite en `data/processed/wines_table.db` y genera el índice vectorial en `data/processed/chroma_db/`.
-
-Ejecuta la carga inicial con:
+This step creates/replaces `data/processed/wines_table.db` and generates Chroma in `data/processed/chroma_db`.
 
 ```bash
 python scripts/ingests.py
 ```
 
-Notas importantes:
-
-- La tabla SQLite se crea con el nombre `wines`.
-- Las consultas del agente deben apuntar a `wines`, no a `wines_table`.
-
-## Ejecución de la API
-
-El servidor se expone desde `src.main:app`.
+### 4) Start the API
 
 ```bash
-uvicorn src.main:app --reload
+uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-La API queda disponible en `http://127.0.0.1:8000`.
+API available at:
 
-## Endpoint principal
+- `http://127.0.0.1:8000`
+- `http://127.0.0.1:8000/docs`
 
-### `POST /api/conversation`
+## Run With Docker (Image)
 
-Envía una consulta al agente y, opcionalmente, un `thread_id` para continuar una conversación previa.
+### 1) Build
 
-Ejemplo:
+```bash
+docker build -t wine-data-agent:latest .
+```
+
+### 2) Run
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env -v "${PWD}/data:/app/data" wine-data-agent:latest
+```
+
+Note: in PowerShell, if `${PWD}` does not resolve as expected, use an absolute Windows path.
+
+## Run With Docker Compose
+
+Current `docker-compose.yml`:
+
+- builds from `.`
+- exposes `8000:8000`
+- loads variables from `.env`
+- mounts `./data` into `/app/data`
+
+Commands:
+
+```bash
+docker compose up --build
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+## API
+
+### POST `/api/conversation`
+
+Request:
 
 ```json
 {
-	"query": "Busca vinos de Francia con más de 90 puntos",
+	"query": "Find French wines with more than 90 points",
 	"thread_id": null
 }
 ```
 
-Respuesta esperada:
+Response (example):
 
 ```json
 {
-	"answer": "...",
-	"thread_id": "...",
+	"thread_id": "3f7f6d75-92b2-4c21-9a2c-130f0f9f79f4",
+	"answer": "I found 3 wines...",
 	"sources": ["Tool: query_by_specs"]
 }
 ```
 
-## Ejemplos de uso
+### GET `/`
 
-- Buscar por identificador: `id` del vino.
-- Buscar por denominación: `designation`.
-- Filtrar por criterios: `country`, `points`, `price`, `province`, `region_1`, `region_2` y `taster_name`.
+Basic health response:
 
-## Funcionamiento interno
+```json
+{
+	"message": "API is running. Please go to /docs for interactive Swagger documentation."
+}
+```
 
-1. El cliente envía una pregunta al endpoint de conversación.
-2. FastAPI delega la consulta al agente.
-3. El agente decide si necesita usar una herramienta de consulta.
-4. La herramienta accede a la base SQLite local y devuelve los datos encontrados.
-5. La API responde con la salida generada y las herramientas utilizadas.
+## Agent Tools
 
-## Próximos pasos sugeridos
+- `query_by_id(id)`
+- `query_by_designation(designation)`
+- `query_by_specs(country, designation, points, price, province, region_1, region_2, taster_name)`
 
-- Agregar ejemplos de requests con `curl` o Postman.
-- Documentar el esquema completo de columnas del dataset.
-- Exponer un frontend simple para conversar con el agente.
+Currently, `query_by_specs` returns up to 3 results (`LIMIT 3`).
+
+## Important Notes
+
+- The ingestion script uses `MAX_ROWS = 90` by default.
+- If the CSV changes or you need to regenerate embeddings, run `python scripts/ingests.py` again.
+- Without `GOOGLE_API_KEY`, the agent cannot answer.
+- Conversation memory (`thread_id`) lives in process memory.
+
+## Quick Troubleshooting
+
+- API key errors: verify `.env` and ensure Docker/Compose is loading it.
+- No query results: confirm ingestion ran and that `data/processed/wines_table.db` exists.
+- Port already in use: switch to a different port in run/compose.
+
+## Suggested Next Improvements
+
+- Add integration tests for endpoints and tools.
+- Extend semantic retrieval by using Chroma during response generation.
+- Persist conversation memory outside process state for production.
